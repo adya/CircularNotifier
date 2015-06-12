@@ -11,13 +11,14 @@ using System.Runtime.CompilerServices;
 using System.Drawing.Drawing2D;
 
 
-///TODO: Set Control ratio to 1:1
-
 namespace CircularNotifierControl
 {
     public partial class CircularNotifier : UserControl, INotifyPropertyChanged
     {
-        
+
+        public delegate void CircularNotifierTick(CircularNotifier sender); 
+        event CircularNotifierTick Tick;
+
         #region Fields
         
         // For fields description see properties below.
@@ -27,6 +28,8 @@ namespace CircularNotifierControl
         private int ringsCount;
         private int rotation;
 
+        private Timer timer;
+        private bool isRunning;
 
         private Ring[] rings;
         private List<RingSlice> slices;
@@ -35,10 +38,9 @@ namespace CircularNotifierControl
         private Rectangle drawingArea;
         private Point center;
 
-        private int width; // these width and height used to store prev size when resizing control.
-        private int height;
         private int offset;
         private bool isMeasured;
+        private int visibleRingsCount;
 
         private bool ringsWidthAuto;
         private int ringsWidth;
@@ -63,6 +65,13 @@ namespace CircularNotifierControl
             Period = 500;
             Rotation = 0;
 
+
+            timer = new Timer();
+            timer.Interval = Period;
+            timer.Tick += CircularNotifier_Tick;
+            AutoStart = true;
+            AutoStop = true;
+
             sectorLines = null;
             rings = null;
             slices = new List<RingSlice>();
@@ -70,7 +79,7 @@ namespace CircularNotifierControl
             Offset = 10;
             RingsWidth = 25;
             RingsWidthAuto = true;
-            RingsMinInnerDiamter = 100;
+            RingsMinInnerDiameter = 100;
 
             RingsColor = Color.Black;
             RingsThickness = 1;
@@ -90,24 +99,7 @@ namespace CircularNotifierControl
 
         #region Properties
 
-        /// <summary>
-        /// Returns array of indexes of lines that should be drawn thick. <para/>
-        /// Note: Use methods <see cref="CircularNotifier.SetThickLines(int[])"/> and <see cref="CircularNotifier.SetThinLines(int[])"/> to easy set up different lines.
-        /// </summary>
-        public int[] ThickLines
-        {
-            get
-            {
-                List<int> indexes = new List<int>();
-                for (int i = 0; i < Sectors; i++) // no ways to insert LINQ because we need to get indexes.
-                {
-                    if (sectorLines[i].IsThick)
-                        indexes.Add(i);
-                }
-                return indexes.ToArray();
-            }
-        }
-
+        #region Ticks Properties
         /// <summary>
         /// The period of time measured in ms between shifting sectors inside the circle.
         /// </summary>
@@ -116,7 +108,23 @@ namespace CircularNotifierControl
             get { return period; }
             set { SetField(ref period, value); }
         }
-        
+
+        /// <summary>
+        /// Gets flag indicating whether the <see cref="CircularNotifier"/> is currently running.
+        /// </summary>
+        public bool IsRunning { get { return isRunning; } private set { SetField(ref isRunning, value); } }
+
+        /// <summary>
+        /// Gets the flag indicating whether the <see cref="CircularNotifier"/> should start ticks when new events added.
+        /// </summary>
+        public bool AutoStart { get; set; }
+
+        /// <summary>
+        /// Gets the flag indicating whether the <see cref="CircularNotifier"/> should stop ticks when all events are disappeared.
+        /// </summary>
+        public bool AutoStop { get; set; }
+        #endregion
+
         /// <summary>
         /// Total number of sectors in circles.
         /// </summary>
@@ -154,12 +162,29 @@ namespace CircularNotifierControl
             set { SetField(ref offset, value); }
         }
 
+        /// <summary>
+        /// Sets fill color of specified ring. By default fill color is set to Transparent.
+        /// </summary>
+        public void SetRingFillColor(int index, Color fillColor)
+        {
+            if (index < 0 || index >= rings.Length)
+                return;
+            rings[index].FillColor = fillColor;
+            Invalidate();
+        }
+
+        /// <summary>
+        /// Width of the rings (distance between inner and outer radius).
+        /// </summary>
         public int RingsWidth
         {
             get { return ringsWidth; }
             set { SetField(ref ringsWidth, value); }
         }
 
+        /// <summary>
+        /// The flag indicating whether RingsWidth should be auto-measured to fit given space.
+        /// </summary>
         public bool RingsWidthAuto
         {
             get { return ringsWidthAuto; }
@@ -169,7 +194,7 @@ namespace CircularNotifierControl
         /// <summary>
         /// Gets or Sets minimum diamter of the most inner ring.
         /// </summary>
-        public int RingsMinInnerDiamter
+        public int RingsMinInnerDiameter
         {
             get { return ringsMinInnerDiameter; }
             set { SetField(ref ringsMinInnerDiameter, value); }
@@ -179,38 +204,54 @@ namespace CircularNotifierControl
 
         #region Drawing properties
 
+        /// <summary>
+        /// Color of the rings borders.
+        /// </summary>
         public Color RingsColor
         {
             get { return ringsColor; }
             set { SetField(ref ringsColor, value); }
         }
 
+        /// <summary>
+        /// Thickness of the rings borders.
+        /// </summary>
         public float RingsThickness
         {
             get { return ringsThickness; }
             set { SetField(ref ringsThickness, value); }
         }
 
-      
-
+        /// <summary>
+        /// Color of thin lines.
+        /// </summary>
         public Color LinesColor
         {
             get { return linesColor; }
             set { SetField(ref linesColor, value); }
         }
 
+        /// <summary>
+        /// Base thickness of the lines.
+        /// </summary>
         public float LinesThickness
         {
             get { return linesThickness; }
             set { SetField(ref linesThickness, value); }
         }
 
+        /// <summary>
+        /// Color of the thick lines.
+        /// </summary>
         public Color LinesThickColor
         {
             get { return linesThickColor; }
             set { SetField(ref linesThickColor, value); }
         }
 
+        /// <summary>
+        /// Thick Factor is thickness multiplier for thick lines so thick line will have LineThickness*LineThickFactor.
+        /// </summary>
         public float LinesThickFactor
         {
             get { return linesThickFactor; }
@@ -234,6 +275,24 @@ namespace CircularNotifierControl
             return true;
         }
 
+        #region Thick Lines Properties
+        /// <summary>
+        /// Returns array of indexes of lines that should be drawn thick. <para/>
+        /// Note: Use methods <see cref="CircularNotifier.SetThickLines(int[])"/> and <see cref="CircularNotifier.SetThinLines(int[])"/> to easy set up different lines.
+        /// </summary>
+        public int[] ThickLines
+        {
+            get
+            {
+                List<int> indexes = new List<int>();
+                for (int i = 0; i < Sectors; i++) // no ways to insert LINQ because we need to get indexes.
+                {
+                    if (sectorLines[i].IsThick)
+                        indexes.Add(i);
+                }
+                return indexes.ToArray();
+            }
+        }
 
         /// <summary>
         /// Sets line type to Thin at given indexes.
@@ -243,10 +302,9 @@ namespace CircularNotifierControl
         {
             foreach (int index in indexes)
             {
-                if (index >= 0 && index < Sectors/2)
+                if (index >= 0 && index < Sectors)
                 {
                     sectorLines[index].IsThick = false;
-                    sectorLines[(index + Sectors / 2) % Sectors].IsThick = false;
                 }
                 
             }
@@ -261,16 +319,103 @@ namespace CircularNotifierControl
         {
             foreach (int index in indexes)
             {
-                if (index >= 0 && index < Sectors/2)
+                if (index >= 0 && index < Sectors)
                 {
                     sectorLines[index].IsThick = true;
-                    sectorLines[(index + Sectors / 2) % Sectors].IsThick = true;
                 }
             }
             Invalidate();
         }
+
         #endregion
-     
+        #endregion
+
+//*********  USER METHODS **************///
+        #region User Methods
+        /// <summary>
+        /// Main method of the CircularNotifier. Adds a slice to specified ring in specified sector.
+        /// </summary>
+        /// <param name="sector">Chosen sector where the event will be placed.</param>
+        /// <param name="ring">Chosen ring where the event will be placed.</param>
+        /// <param name="color">Color of the event's slice.</param>
+        public void AddEvent(int sector, int ring, Color color)
+        {
+            if (ring < 0 || ring >= rings.Length) return;
+            if (sector < 0 || sector >= Sectors) return;
+
+            RingSlice slice = slices.SingleOrDefault((x) => x.SectorIndex == sector && x.RingIndex == ring);
+            if (slice == null)
+                slices.Add(rings[ring].GetSlice(sector, color));
+            else
+                slice.FillColor = color;
+            Invalidate();
+            if (AutoStart && !IsRunning)
+                Start();
+        }
+
+        /// <summary>
+        /// Main method of the CircularNotifier. Adds a slice to the most outer ring in specified sector.
+        /// </summary>
+        /// <param name="sector">Chosen sector where the event will be placed.</param>
+        /// <param name="color">Color of the event's slice.</param>
+        public void AddEvent(int sector, Color color)
+        {
+            AddEvent(sector, 0, color);
+        }
+
+        public void RemoveAllEvents()
+        {
+            slices.Clear();
+            Invalidate();
+        }
+
+        public void Start() {
+            if (IsRunning || slices.Count == 0) return;
+            timer.Start();
+            IsRunning = true;
+        }
+
+        public void Stop()
+        {
+            if (!IsRunning) return;
+            timer.Stop();
+            IsRunning = false;
+        }
+
+        #endregion
+
+        #region Tick Methods
+        /// <summary>
+        /// Moves all slices inside the circle by shifting them for specified number of rings.
+        /// </summary>
+        /// <param name="shift">Desired number rings to shift slices.</param>
+        private void MoveSlicesInside(int shift = 1)
+        {
+            int i = 0;
+            int ringIndex;
+            while (i < slices.Count) {
+                ringIndex = slices[i].RingIndex + shift;
+                if (ringIndex < RingsCount)
+                {
+                    slices[i] = rings[ringIndex].GetSlice(slices[i].SectorIndex, slices[i].FillColor);
+                    i++;
+                }
+                else 
+                    slices.RemoveAt(i);
+            }
+            Invalidate();
+        }
+
+        private void CircularNotifier_Tick(object sender, EventArgs e)
+        {
+            MoveSlicesInside();
+            if (slices.Count == 0 && AutoStop) 
+                Stop();
+            if (Tick != null)
+                Tick(this);
+        }
+        #endregion
+
         #region Drawing methods
 
         protected override void OnPaint(PaintEventArgs e)
@@ -287,7 +432,7 @@ namespace CircularNotifierControl
             foreach (Ring r in rings)
             {
                 r.Render(g);
-            }   
+            }
         }
 
         private void DrawSectorLines(Graphics g)
@@ -295,17 +440,17 @@ namespace CircularNotifierControl
             foreach (SectorLine line in sectorLines)
             {
                 line.Render(g);
-            }       
+            }
         }
 
         private void DrawRingSlices(Graphics g)
         {
             foreach (RingSlice slice in slices)
             {
-                slice.Render(g);    
+                slice.Render(g);
             }
         }
-     
+
         #endregion
 
         #region Measure & Update methods
@@ -315,49 +460,13 @@ namespace CircularNotifierControl
             MeasureDrawingArea();
             MeasureSectorLines();
             MeasureRings();
+            MeasureSlices();
             isMeasured = true;
-        }
-
-        private void UpdateSectorLines()
-        {
-            for (int i = 0; i < sectorLines.Length; i++)
-            {
-                sectorLines[i].LineColor = LinesColor;
-                sectorLines[i].LineThickColor = LinesThickColor;
-                sectorLines[i].Thickness = LinesThickness;
-                sectorLines[i].ThickFactor = LinesThickFactor;
-            }
-        }
-
-        private void UpdateRings()
-        {
-            for (int i = 0; i < rings.Length; i++)
-            {
-                rings[i].DrawingPen = ringsPen;
-                rings[i].Sectors = Sectors;
-                rings[i].RotationAngle = Rotation;
-            }
-        }
-
-        private void MeasureSlices()
-        {
-            ///TODO: Update slices
-            RingSlice[] newSlices = new RingSlice[slices.Count];
-            for (int i = 0; i < slices.Count; i++)
-            {
-                RingSlice tmp = slices[i];
-                int ringI = tmp.SlicedRingIndex;
-                int sectorI = tmp.SlicedSectorIndex;
-
-                newSlices[i] = rings[ringI].GetSlice(sectorI, tmp.FillColor);
-            }
-            slices.Clear();
-            slices.AddRange(newSlices);
         }
 
         private void MeasureSectorLines()
         {
-            bool[] prevLinesType = (sectorLines!= null ? sectorLines.Select(x=>x.IsThick).ToArray() : new bool[Sectors]);
+            bool[] prevLinesType = (sectorLines != null ? sectorLines.Select(x => x.IsThick).ToArray() : new bool[Sectors]);
             sectorLines = new SectorLine[Sectors];
             PointF lineStart = new PointF(drawingArea.X + drawingArea.Width / 2, drawingArea.Y);
             lineStart = RotatePoint(lineStart, Rotation);
@@ -370,12 +479,9 @@ namespace CircularNotifierControl
             }
 
             int length = Math.Min(prevLinesType.Length, Sectors);
-            for (int i = 0; i < length/2; i++)
+            for (int i = 0; i < length; i++)
                 sectorLines[i].IsThick = prevLinesType[i];
-            for (int i = 0; i < Sectors/2; i++)
-			{
-                sectorLines[(i + Sectors / 2) % Sectors].IsThick = sectorLines[i].IsThick;
-			}
+
         }
 
         private PointF RotatePoint(PointF point, double angle)
@@ -396,55 +502,87 @@ namespace CircularNotifierControl
 
         private void MeasureRings()
         {
-            RingsWidth = (RingsWidthAuto ? ((drawingArea.Width - RingsMinInnerDiamter) / 2) / RingsCount : RingsWidth);
-            int outerRadius = drawingArea.Width/2,
-                innerRadius = drawingArea.Width/2 - RingsWidth;
+            RingsWidth = (RingsWidthAuto ? ((drawingArea.Width - RingsMinInnerDiameter) / 2) / RingsCount : RingsWidth);
+            int outerRadius = drawingArea.Width / 2,
+                innerRadius = drawingArea.Width / 2 - RingsWidth;
+            if (innerRadius <= 0) innerRadius = drawingArea.Width / 2;
             List<Ring> tmpRings = new List<Ring>();
             for (int i = 0; i < RingsCount; i++)
             {
-
                 tmpRings.Add(new Ring(center, outerRadius, innerRadius, Sectors, Rotation, ringsPen, i, Ring.DrawingMethod.OUTER));
                 outerRadius = innerRadius;
                 innerRadius = innerRadius - RingsWidth;
-                
-                if (innerRadius < RingsMinInnerDiamter / 2) // Not enough space to fit all rings 
+
+                if (innerRadius < RingsMinInnerDiameter / 2) // Not enough space to fit all rings 
                     break;
             }
             rings = tmpRings.ToArray();
-            
+            visibleRingsCount = rings.Length; // in case autosizing is disabled store number of visible rings.
             rings[rings.Length - 1].RingDrawingMethod = Ring.DrawingMethod.FULL;
+        }
+
+        private void MeasureSlices()
+        {
+            List<RingSlice> newSlices = new List<RingSlice>();
+            for (int i = 0; i < slices.Count; i++)
+            {
+                RingSlice tmp = slices[i];
+                int ringI = tmp.RingIndex;
+                int sectorI = tmp.SectorIndex;
+
+                if (ringI < visibleRingsCount)
+                    newSlices.Add(rings[ringI].GetSlice(sectorI, tmp.FillColor));
+            }
+            slices.Clear();
+            slices.AddRange(newSlices);
+        }
+
+        /// <summary>
+        /// Update properties of the lines which don't require measurements.
+        /// </summary>
+        private void UpdateSectorLines()
+        {
+            for (int i = 0; i < sectorLines.Length; i++)
+            {
+                sectorLines[i].LineColor = LinesColor;
+                sectorLines[i].LineThickColor = LinesThickColor;
+                sectorLines[i].Thickness = LinesThickness;
+                sectorLines[i].ThickFactor = LinesThickFactor;
+            }
+        }
+
+        /// <summary>
+        /// Update properties of the rings which don't require measurements.
+        /// </summary>
+        private void UpdateRings()
+        {
+            for (int i = 0; i < rings.Length; i++)
+            {
+                rings[i].DrawingPen = ringsPen;
+                rings[i].Sectors = Sectors;
+                rings[i].RotationAngle = Rotation;
+            }
+        }
+
+        /// <summary>
+        /// Makes aspect ratio 1:1
+        /// </summary>
+        private void CircularNotifier_SizeChanged(object sender, EventArgs e)
+        {
+            if (this.Width != this.Height)
+            {
+                this.Width = Math.Min(this.Width, this.Height);
+                this.Height = Math.Min(this.Width, this.Height);
+            }
+            else
+            {
+                base.OnResize(e);
+                Measure();
+            }
         }
 
         #endregion
 
-        /// <summary>
-        /// Main method of the CircularNotifier. Adds a slice to specified ring in specified sector.
-        /// </summary>
-        /// <param name="sector">Chosen sector where the event will be placed.</param>
-        /// <param name="ring">Chosen ring where the event will be placed.</param>
-        /// <param name="color">Color of the event's slice.</param>
-        public void AddEvent(int sector, int ring, Color color)
-        {
-            if (ring < 0 || ring >= rings.Length) return;
-            if (sector < 0 || sector >= Sectors) return;
-
-            RingSlice slice = slices.SingleOrDefault((x) => x.SlicedSectorIndex == sector && x.SlicedRingIndex == ring);
-            if (slice == null)
-                slices.Add(rings[ring].GetSlice(sector, color));
-            else
-                slice.FillColor = color;
-            Invalidate();
-        }
-
-        /// <summary>
-        /// Main method of the CircularNotifier. Adds a slice to the most outer ring in specified sector.
-        /// </summary>
-        /// <param name="sector">Chosen sector where the event will be placed.</param>
-        /// <param name="color">Color of the event's slice.</param>
-        public void AddEvent(int sector, Color color)
-        {
-            AddEvent(sector, 0, color);
-        }
 
         #region INotifyPropertyChanged Implementation
 
@@ -457,6 +595,9 @@ namespace CircularNotifierControl
                 PropertyChanged(this, new PropertyChangedEventArgs(propertyName));
         }
 
+        /// <summary>
+        /// Remeasures and redraw component if needed when any property changed.
+        /// </summary>
         private void UpdateCircularNotifier_PropertyChanged(object sender, PropertyChangedEventArgs e)
         {
             object value = this.GetType().GetProperty(e.PropertyName).GetValue(this);
@@ -474,6 +615,15 @@ namespace CircularNotifierControl
             if (name.Equals("Offset"))
             {
                 Measure();
+            }
+            else if (name.Equals("Period"))
+            {
+                timer.Interval = Period;
+                if (timer.Enabled)
+                {
+                    timer.Stop();
+                    timer.Start();
+                }
             }
             else if (name.Equals("Sectors") || name.Equals("Rotation"))
             {
@@ -517,6 +667,9 @@ namespace CircularNotifierControl
             Invalidate();
         }
 
+        /// <summary>
+        /// Validate changed properties and throws exceptions if invalid values was given to the properties.
+        /// </summary>
         private void ValidateProperties_PropertyCahnged(object sender, PropertyChangedEventArgs e)
         {
             object value = this.GetType().GetProperty(e.PropertyName).GetValue(this);
@@ -526,6 +679,11 @@ namespace CircularNotifierControl
             if (name.Equals("Offset"))
             {
                 // probably it can be negative
+            }
+            else if (name.Equals("Period"))
+            {
+                if (Period <= 0)
+                    throw new ArgumentException("Period must be positive number representing milliseconds."); 
             }
             else if (name.Equals("Sectors") || name.Equals("Rotation"))
             {
@@ -550,7 +708,7 @@ namespace CircularNotifierControl
             }
             else if (name.Equals("RingsMinInnerDiameter") || name.Equals("RingsCount"))
             {
-                if (RingsMinInnerDiamter <= 0)
+                if (RingsMinInnerDiameter <= 0)
                 {
                     throw new ArgumentException("Rings minimum inner diameter  must be positive number.");
                 }
@@ -572,18 +730,6 @@ namespace CircularNotifierControl
 
         #endregion
 
-        private void CircularNotifier_SizeChanged(object sender, EventArgs e)
-        {
-            if (this.Width != this.Height)
-            {
-                this.Width = Math.Min(this.Width, this.Height);
-                this.Height = Math.Min(this.Width, this.Height);
-            }
-            else
-            {
-                base.OnResize(e);
-                Measure();
-            }
-        }
+      
     }
 }

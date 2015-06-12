@@ -95,23 +95,26 @@ namespace CircularNotifierControl
         /// Gets center point of the ring.
         /// </summary>
         public PointF Center { get; private set; }
+
         /// <summary>
         /// Gets outer radius of the ring.
         /// </summary>
         public int OuterRadius { get; private set; }
+
         /// <summary>
         /// Gets inner radius of the ring.
         /// </summary>
         public int InnerRadius { get; private set; }
+
         /// <summary>
-        /// Gets height of the ring.
+        /// Gets width of the ring.
         /// </summary>
-        public int Height { get { return OuterRadius - InnerRadius; } }
+        public int Width { get { return OuterRadius - InnerRadius; } }
 
         /// <summary>
         /// Gets index of the ring in <see cref="CircularNotifier"/>.
         /// </summary>
-        public int RingIndex { get; private set; }
+        public int RingIndex { get; protected set; }
 
         /// <summary>
         /// Gets or Sets number of sectors of the ring in which it can be sliced.
@@ -182,18 +185,15 @@ namespace CircularNotifierControl
         {
             float sectorAngle = 360.0f / Sectors;
             float angle = sector * sectorAngle - 90.0f + RotationAngle; // -90 because Graphics.DrawArc method measures angles clockwise from the x-axis to the starting point of the arc. 
-            float angleMeasErr = (OuterRadius - InnerRadius > 50 ? 30.0f/(OuterRadius - InnerRadius) : 0);
-            ///TODO: Figure out the best way to fix wide slices (they are overlapped with each other).
-            /// As an option.... Wide slices can be splited and drawn as multiple arcs.
-            return new RingSlice(Center, OuterRadius, InnerRadius, angle - angleMeasErr, sectorAngle + 2*angleMeasErr, RingIndex, sector, sliceColor);
+            return new RingSlice(Center, OuterRadius, InnerRadius, angle, sectorAngle, RingIndex, sector, sliceColor);
         }
 
         public virtual void Render(Graphics g)
         {
             if (!FillColor.Equals(Color.Transparent))
             {
-                Pen fillPen = new Pen(FillColor, Height - 1);
-                float radius = (float)OuterRadius - ((float)(Height)) / 2;
+                Pen fillPen = new Pen(FillColor, Width - 1);
+                float radius = (float)OuterRadius - ((float)(Width)) / 2;
                 g.DrawArc(fillPen, Center.X - radius, Center.Y - radius, radius * 2, radius * 2, 0, 360);
             }
 
@@ -212,6 +212,10 @@ namespace CircularNotifierControl
     /// </summary>
     class RingSlice : Ring
     {
+        /// <summary>
+        /// The maximum height of the slice which can be drawn in single arc. If height exeeds this value slice will be drawn as multiple pieces.
+        /// </summary>
+        const float MAX_SLICE_HEIGHT = 20.0f;
 
         /// <summary>
         /// Gets staring angle of the slice.
@@ -222,34 +226,59 @@ namespace CircularNotifierControl
         /// </summary>
         public float SweepAngle { get; private set; }
 
-        /// <summary>
-        /// Gets index of sliced ring.
-        /// </summary>
-        public int SlicedRingIndex { get; private set; }
+       
         /// <summary>
         /// Gets index of sliced sector.
         /// </summary>
-        public int SlicedSectorIndex { get; private set; }
+        public int SectorIndex { get; private set; }
 
         /// <summary>
         /// Fill color of the slice is the same as <see cref="DrawingPen.Color"/>.
         /// </summary>
-        public override Color FillColor { get { return DrawingPen.Color; } set { DrawingPen.Color = FillColor; } }
+        public override Color FillColor { get { return DrawingPen.Color; } set { DrawingPen.Color = value; } }
 
         public RingSlice(PointF center, int outerRadius, int innerRadius, float startAngle, float endAngle, int slicedRing, int slicedSector, Color sliceColor)
             : base(center, outerRadius, innerRadius, 0, 0, new Pen(sliceColor), slicedRing)
         {
             StartAngle = startAngle;
             SweepAngle = endAngle;
-            SlicedRingIndex = slicedRing;
-            SlicedSectorIndex = slicedSector;
+            RingIndex = slicedRing;
+            SectorIndex = slicedSector;
+            FillColor = sliceColor;
         }
 
         public override void Render(Graphics g)
         {
-            float radius = (float)OuterRadius - ((float)(Height)) / 2;
-            DrawingPen.Width = Height - 1;
-            g.DrawArc(DrawingPen, Center.X - radius, Center.Y - radius, radius * 2, radius * 2, StartAngle, SweepAngle);
+            ///TODO: Optimization required.
+            if (Width > MAX_SLICE_HEIGHT)
+            {
+                int pieces = (int)Math.Floor(Width / MAX_SLICE_HEIGHT);
+                float extraHeight = Width - pieces * MAX_SLICE_HEIGHT;       // calculate extra height which is less than MAX_SLICE_HEIGHT
+                int extraPiece = (extraHeight > 0 ? 1 : 0); // 1 if we got extra height otherwise no extra pieces.
+                float[] radiuses = new float[pieces + extraPiece];
+
+                if (extraPiece == 1) 
+                    radiuses[pieces] = OuterRadius - extraHeight / 2; // last one is slice with height = extraHeight
+
+                float piecesOuterRadius = OuterRadius - extraHeight; // OuterRadius for N pieces with height = MAX_SLICE_HEIGHT each.
+                for (int i = 0; i < pieces; i++)
+                {
+                    radiuses[i] = piecesOuterRadius - MAX_SLICE_HEIGHT / 2 - i * MAX_SLICE_HEIGHT;
+                }
+
+                for (int i = 0; i < radiuses.Length; i++)
+                {
+                    DrawingPen.Width = (extraPiece == 1 && i == pieces ? extraHeight : MAX_SLICE_HEIGHT) + 1f;
+                    g.DrawArc(DrawingPen, Center.X - radiuses[i], Center.Y - radiuses[i], radiuses[i] * 2, radiuses[i] * 2, StartAngle, SweepAngle);    
+                }
+            }
+            else
+            {
+                float radius = (float)OuterRadius - ((float)(Width)) / 2;
+                DrawingPen.Width = Width - 1;
+                g.DrawArc(DrawingPen, Center.X - radius, Center.Y - radius, radius * 2, radius * 2, StartAngle, SweepAngle);
+                
+            }
         }
     }
     #endregion
