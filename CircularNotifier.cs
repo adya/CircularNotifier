@@ -13,27 +13,27 @@ using System.Drawing.Drawing2D;
 
 ///TODO: Set Control ratio to 1:1
 
-namespace CircularNotifier
+namespace CircularNotifierControl
 {
     public partial class CircularNotifier : UserControl, INotifyPropertyChanged
     {
-
+        
+        #region Fields
+        
         // For fields description see properties below.
 
         private int period;
         private int sectors;
-        private int rings;
+        private int ringsCount;
         private int rotation;
 
 
-        /// <summary>
-        /// Inner array which stores flags for each line, which when set to true indicates that the line will be thick otherwise it will be thin.
-        /// </summary>
-        private bool[] linesType;
-
+        private Ring[] rings;
+        private List<RingSlice> slices;
+        private SectorLine[] sectorLines;
 
         private Rectangle drawingArea;
-        Point center;
+        private Point center;
 
         private int offset;
         private int ringsGap;
@@ -45,42 +45,47 @@ namespace CircularNotifier
 
 
         private Color linesColor;
+        private Color linesThickColor;
         private float linesThickness;
         private float linesThickFactor; // thickness factor to make lines thicker
-        private Pen linesPen; // pen to draw sector lines
+
+        #endregion
 
         public CircularNotifier()
         {
             InitializeComponent();
             Sectors = 12;
-            Rings = 10;
+            RingsCount = 8;
             Period = 500;
             Rotation = 0;
-            linesType = new bool[Sectors];
+
+            sectorLines = null;
+            rings = null;
+            slices = new List<RingSlice>();
 
             Offset = 10;
             RingsGap = 25;
-            RingsMinWidth = 100;
+            RingsGapAuto = true;
+            RingsMinInnerDiamter = 100;
 
             RingsColor = Color.Black;
             RingsThickness = 1;
             ringsPen = new Pen(RingsColor, RingsThickness);
 
             LinesColor = Color.Black;
+            LinesThickColor = LinesColor;
             LinesThickness = 1;
-            linesThickFactor = 1.75f;
-            linesPen = new Pen(LinesColor, LinesThickness);
+            LinesThickFactor = 2f;
 
-            CalculateDrawingArea();
+            Measure();
             
             PropertyChanged += CircularNotifier_PropertyChanged;
-
-            
-            
         }
 
+        #region Properties
+
         /// <summary>
-        /// Returns Array of indexes of lines that should be drawn thick. <para/>
+        /// Returns array of indexes of lines that should be drawn thick. <para/>
         /// Note: Use methods <see cref="CircularNotifier.SetThickLines(int[])"/> and <see cref="CircularNotifier.SetThinLines(int[])"/> to easy set up different lines.
         /// </summary>
         public int[] ThickLines
@@ -90,13 +95,12 @@ namespace CircularNotifier
                 List<int> indexes = new List<int>();
                 for (int i = 0; i < Sectors; i++) // no ways to insert LINQ because we need to get indexes.
                 {
-                    if (linesType[i])
+                    if (sectorLines[i].IsThick)
                         indexes.Add(i);
                 }
                 return indexes.ToArray();
             }
         }
-
 
         /// <summary>
         /// The period of time measured in ms between shifting sectors inside the circle.
@@ -119,10 +123,10 @@ namespace CircularNotifier
         /// <summary>
         /// Number of rings in circle.
         /// </summary>
-        public int Rings
+        public int RingsCount
         {
-            get { return rings; }
-            set { SetField(ref rings, value); }
+            get { return ringsCount; }
+            set { SetField(ref ringsCount, value); }
         }
 
         /// <summary>
@@ -134,6 +138,7 @@ namespace CircularNotifier
             set { SetField(ref rotation, value); }
         }
 
+        #region Measurement properties
         /// <summary>
         /// Offset of the drawing area.
         /// </summary>
@@ -143,11 +148,24 @@ namespace CircularNotifier
             set { SetField(ref offset, value); }
         }
 
-        public int RingsMinWidth
+        public int RingsGap
+        {
+            get { return ringsGap; }
+            set { SetField(ref ringsGap, value); }
+        }
+
+        public bool RingsGapAuto { get; set; }
+
+        /// <summary>
+        /// Gets or Sets minimum diamter of the most inner ring.
+        /// </summary>
+        public int RingsMinInnerDiamter
         {
             get { return ringsMinWidth; }
             set { SetField(ref ringsMinWidth, value); }
         }
+
+        #endregion
 
         #region Drawing properties
 
@@ -163,12 +181,6 @@ namespace CircularNotifier
             set { SetField(ref ringsThickness, value); }
         }
 
-        public int RingsGap
-        {
-            get { return ringsGap; }
-            set { SetField(ref ringsGap, value); }
-        }
-
         public Color LinesColor
         {
             get { return linesColor; }
@@ -179,6 +191,18 @@ namespace CircularNotifier
         {
             get { return linesThickness; }
             set { SetField(ref linesThickness, value); }
+        }
+
+        public Color LinesThickColor
+        {
+            get { return linesThickColor; }
+            set { SetField(ref linesThickColor, value); }
+        }
+
+        public float LinesThickFactor
+        {
+            get { return linesThickFactor; }
+            set { SetField(ref linesThickFactor, value); }
         }
 
         #endregion
@@ -200,123 +224,194 @@ namespace CircularNotifier
 
 
         /// <summary>
-        /// Sets line type to Thin at given indexes
+        /// Sets line type to Thin at given indexes.
         /// </summary>
-        /// <param name="indexes"></param>
+        /// <param name="indexes"> Set of indexes of sectors in forst half the circle. </param>
         public void SetThinLines(params int[] indexes)
         {
             foreach (int index in indexes)
             {
-                if (index >= 0 && index < Sectors)
-                    linesType[index] = false;
+                if (index >= 0 && index < Sectors/2)
+                {
+                    sectorLines[index].IsThick = false;
+                    sectorLines[(index + Sectors / 2) % Sectors].IsThick = false;
+                }
                 
             }
             Invalidate();
         }
 
         /// <summary>
-        /// Sets line type to Thick at given indexes
+        /// Sets line type to Thick at given indexes.
         /// </summary>
-        /// <param name="indexes"></param>
+        /// <param name="indexes">Set of indexes of sectors in forst half the circle. </param>
         public void SetThickLines(params int[] indexes)
         {
             foreach (int index in indexes)
             {
-                if (index >= 0 && index < Sectors)
+                if (index >= 0 && index < Sectors/2)
                 {
-                    linesType[index] = true;
+                    sectorLines[index].IsThick = true;
+                    sectorLines[(index + Sectors / 2) % Sectors].IsThick = true;
                 }
             }
             Invalidate();
         }
-
+        #endregion
+     
         #region Drawing methods
 
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            DrawRingSlices(e.Graphics);
             DrawRings(e.Graphics);
             DrawSectorLines(e.Graphics);
-            //DrawSectors(e.Graphics);
         }
 
         private void DrawRings(Graphics g)
         {
-            int ringX, ringY, ringWidth, ringHeight;
-            for (int i = 0; i < Rings+1; i++)
+            foreach (Ring r in rings)
             {
-                ringX = drawingArea.X + RingsGap * i;
-                ringY = drawingArea.Y + RingsGap * i;
-                ringWidth = drawingArea.Width - 2 * RingsGap * i;
-                ringHeight = drawingArea.Height - 2 * RingsGap * i;
-                if (ringWidth < RingsMinWidth || ringHeight < RingsMinWidth) // Not enough space to fit all rings 
-                    return;
-                g.DrawEllipse(ringsPen, ringX, ringY, ringWidth, ringHeight);    
-            }
+                r.Render(g);
+            }   
         }
 
         private void DrawSectorLines(Graphics g)
         {
-            Point lineStart = new Point(drawingArea.X + drawingArea.Width/2, drawingArea.Y);
-            lineStart = RotatePoint(lineStart, Rotation);
-            int lineLength = drawingArea.Width;
-            int angle = 360 / Sectors;
-            for (int i = 0; i < Sectors; i++)
+            foreach (SectorLine line in sectorLines)
             {
-                
-                if (linesType[i] || linesType[(i + Sectors/2)%Sectors]) ///TODO: Here's the place where thick lines are determined.
-                    linesPen.Width = LinesThickness * linesThickFactor;
-                else linesPen.Width = LinesThickness;
-                g.DrawLine(linesPen, lineStart, center);
-                lineStart = RotatePoint(lineStart, angle);
-            }
-    
+                line.Render(g);
+            }       
         }
 
-        //private void DrawSectors(Graphics g)
-        //{
-        //    Pen p = new Pen(Color.Red);
-        //    Rectangle OuterRect = new Rectangle(100, 100, 200, 200);
-        //    float StartAngle = 
-        //    g.DrawRectangle(p, OuterRect);
-        //    g.DrawArc(p, OuterRect, 90, 60);
-        //}
-
-        private Point RotatePoint(Point point, double angle)
+        private void DrawRingSlices(Graphics g)
         {
-            double angleRad = angle * Math.PI / 180;
+            foreach (RingSlice slice in slices)
+            {
+                slice.Render(g);    
+            }
+        }
+     
+        #endregion
+
+        #region Measure & Update methods
+
+        private void Measure()
+        {
+            MeasureDrawingArea();
+            MeasureSectorLines();
+            MeasureRings();
+        }
+
+        private void UpdateSectorLines()
+        {
+            for (int i = 0; i < sectorLines.Length; i++)
+            {
+                sectorLines[i].LineColor = LinesColor;
+                sectorLines[i].LineThickColor = LinesThickColor;
+                sectorLines[i].Thickness = LinesThickness;
+                sectorLines[i].ThickFactor = LinesThickFactor;
+            }
+        }
+
+        private void UpdateRings()
+        {
+            for (int i = 0; i < rings.Length; i++)
+            {
+                rings[i].DrawingPen = ringsPen;
+                rings[i].Sectors = Sectors;
+                rings[i].RotationAngle = Rotation;
+            }
+        }
+
+        private void UpdateSlices()
+        {
+            ///TODO: Update slices
+        }
+
+        private void MeasureSectorLines()
+        {
+            bool[] prevLinesType = (sectorLines!= null ? sectorLines.Select(x=>x.IsThick).ToArray() : new bool[Sectors]);
+            sectorLines = new SectorLine[Sectors];
+            PointF lineStart = new PointF(drawingArea.X + drawingArea.Width / 2, drawingArea.Y);
+            lineStart = RotatePoint(lineStart, Rotation);
+            int lineLength = drawingArea.Width;
+            float angle = 360.0f / Sectors;
+            for (int i = 0; i < Sectors; i++)
+            {
+                sectorLines[i] = new SectorLine(center, lineStart, LinesColor, LinesThickness, LinesThickColor, LinesThickFactor);
+                lineStart = RotatePoint(lineStart, angle);
+            }
+
+            int length = Math.Min(prevLinesType.Length, Sectors);
+            for (int i = 0; i < length/2; i++)
+                sectorLines[i].IsThick = prevLinesType[i];
+            for (int i = 0; i < Sectors/2; i++)
+			{
+                sectorLines[(i + Sectors / 2) % Sectors].IsThick = sectorLines[i].IsThick;
+			}
+        }
+
+        private PointF RotatePoint(PointF point, double angle)
+        {
+            double angleRad = angle * Math.PI / 180.0d;
             /* p'x = cos(theta) * (px-ox) - sin(theta) * (py-oy) + ox
              * p'y = sin(theta) * (px-ox) + cos(theta) * (py-oy) + oy  */
             double x = Math.Cos(angleRad) * (point.X - center.X) - Math.Sin(angleRad) * (point.Y - center.Y) + center.X;
             double y = Math.Sin(angleRad) * (point.X - center.X) + Math.Cos(angleRad) * (point.Y - center.Y) + center.Y;
-            return new Point((int)Math.Round(x),(int)Math.Round(y));
+            return new PointF((float)x, (float)y);
         }
 
-        #endregion
 
-        private void UpdateLinesType()
-        {
-            bool[] oldLinesType = (bool[])linesType.Clone();
-            linesType = new bool[Sectors];
-            Array.Copy(oldLinesType, linesType, Math.Min(linesType.Length, oldLinesType.Length));
-        }
-
-        private void CalculateDrawingArea()
+        private void MeasureDrawingArea()
         {
             drawingArea = new Rectangle(Offset, Offset, Width - 2 * Offset, Height - 2 * Offset);
             center = new Point(drawingArea.Left + drawingArea.Width / 2, drawingArea.Top + drawingArea.Height / 2);
         }
 
-        private void CalculateRings()
+        private void MeasureRings()
         {
+            int gap = (RingsGapAuto ? ((drawingArea.Width - RingsMinInnerDiamter) / 2) / RingsCount : RingsGap);
 
+            int outerRadius = drawingArea.Width/2,
+                innerRadius = drawingArea.Width/2 - gap;
+            List<Ring> tmpRings = new List<Ring>();
+            for (int i = 0; i < RingsCount; i++)
+            {
+
+                tmpRings.Add(new Ring(center, outerRadius, innerRadius, Sectors, Rotation, ringsPen, i, Ring.DrawingMethod.OUTER));
+                outerRadius = innerRadius;
+                innerRadius = innerRadius - gap;
+                
+                if (innerRadius < RingsMinInnerDiamter / 2) // Not enough space to fit all rings 
+                    break;
+            }
+            rings = tmpRings.ToArray();
+            
+            rings[rings.Length - 1].RingDrawingMethod = Ring.DrawingMethod.FULL;
+        }
+
+        #endregion
+
+        public void AddEvent(int sector, int ring, Color color)
+        {
+            if (ring < 0 || ring >= rings.Length) return;
+            if (sector < 0 || sector >= Sectors) return;
+
+            RingSlice slice = slices.SingleOrDefault((x) => x.SlicedSector == sector && x.SlicedRing == ring);
+            if (slice == null)
+                slices.Add(rings[ring].GetSlice(sector, color));
+            else
+                slice.FillColor = color;
+            Invalidate();
         }
 
         protected override void OnSizeChanged(EventArgs e)
         {
             base.OnSizeChanged(e);
-            CalculateDrawingArea();
+            MeasureDrawingArea();
         }
 
         #region INotifyPropertyChanged Implementation
@@ -337,40 +432,52 @@ namespace CircularNotifier
             if (name == null) return;
             Console.WriteLine(name + " changed to " + value);
             /*
-             * Update ringsPen if changed property either ringsThickness or ringsColor;
-             * Recreate linesType when Sectors changed;
-             * Redraw when Sectors changed;
-             * Redraw when Rings changed;
-             * Redraw when RingsGap changed;
-             * Redraw when Rotation changed;
+             * Measure ALL if Offset changed;
+             * Update ringsPen and all Rings when either RingsThickness or RingsColor changed;
+             * Measure Lines, Update Rings and Slices when either Sectors or Rotation changed;
+             * Measure Rings and Slices when RingsGap changed if RingsGapAuto is false;
+             * Measure Rings and Slices when either RingsMinInnerDiameter or RingsCount changed;
+             * Update Lines when any of the Lines drawing properties changed;
              */
-
-            if (name.Equals("Sectors"))
+            if (name.Equals("Offset"))
             {
-                UpdateLinesType();
+                Measure();
             }
+            else if (name.Equals("Sectors") || name.Equals("Rotation"))
+            {
+                MeasureSectorLines();
+                UpdateRings();
+                UpdateSlices();
+            }
+            else if (name.Equals("RingsGap"))
+            {
+                if (!RingsGapAuto)
+                {
+                    MeasureRings();
+                    UpdateSlices();
+                }
+            }
+            else if (name.Equals("RingsMinInnerDiameter") || name.Equals("RingsCount"))
+            {
+                MeasureRings();
+                UpdateSlices();
+            }
+            else if (name.Equals("LinesThickness") || name.Equals("LinesColor") || name.Equals("LinesThickColor") || name.Equals("LinesThickFactor"))
+            {
+                UpdateSectorLines();
+            }
+            else if (name.Equals("RingsThickness") || name.Equals("RingsColor"))
+            {
+                ringsPen.Width = RingsThickness;
+                ringsPen.Color = RingsColor;
+                UpdateRings();
+            }
+
+            
 
             Invalidate();
         }
 
         #endregion
     }
-
-    private class Ring
-    {
-
-        public Point Center { get; set; }
-        public int OuterRadius { get; set; }
-        public int InnerRadius { get; set; }
-
-        public Pen RingPen { get; set; }
-
-        public int Height { get { return OuterRadius - InnerRadius; } }
-
-        public void Render(Graphics g) {
-            g.DrawEllipse(RingPen, Center.X - OuterRadius, Center.Y - OuterRadius, OuterRadius * 2, OuterRadius * 2);
-            g.DrawEllipse(RingPen, Center.X - InnerRadius, Center.Y - InnerRadius, InnerRadius * 2, OuterRadius * 2);
-        }
-    }
-
 }

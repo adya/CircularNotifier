@@ -1,4 +1,4 @@
-﻿namespace CircularNotifier
+﻿namespace CircularNotifierControl
 {
     partial class CircularNotifier
     {

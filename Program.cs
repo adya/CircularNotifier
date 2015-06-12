@@ -4,7 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace CircularNotifier
+namespace CircularNotifierControl
 {
     static class Program
     {

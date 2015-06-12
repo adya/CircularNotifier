@@ -8,23 +8,28 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace CircularNotifier
+namespace CircularNotifierControl
 {
     public partial class Form1 : Form
     {
+        Random rnd = new Random();
         public Form1()
         {
             InitializeComponent();
-            CircularNotifier cn = new CircularNotifier();
-            cn.Size = this.Size;
             this.Controls.Add(cn);
-            
-            cn.SetThickLines(0,2,4,6);
-            cn.Rotation = 0;
-            cn.Sectors = 5;
-            cn.Rings = 10;
-            cn.RingsMinWidth = 50;
-            
+            cn.SetThickLines(0,2,5);
+            cn.Offset = 20;
         }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            cn.AddEvent(rnd.Next(cn.Sectors), rnd.Next(cn.RingsCount), GetRandomColor());        
+        }
+
+        private Color GetRandomColor()
+        {
+            return Color.FromArgb(rnd.Next(0, 255), rnd.Next(0, 255), rnd.Next(0, 255));
+            // The error is here
+        }  
     }
 }
