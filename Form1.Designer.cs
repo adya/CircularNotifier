@@ -28,41 +28,58 @@
         /// </summary>
         private void InitializeComponent()
         {
-            this.button1 = new System.Windows.Forms.Button();
+            this.bAddEvent = new System.Windows.Forms.Button();
             this.cn = new CircularNotifierControl.CircularNotifier();
+            this.bAddSector = new System.Windows.Forms.Button();
+            this.bRemoveSector = new System.Windows.Forms.Button();
             this.SuspendLayout();
             // 
-            // button1
+            // bAddEvent
             // 
-            this.button1.Location = new System.Drawing.Point(12, 12);
-            this.button1.Name = "button1";
-            this.button1.Size = new System.Drawing.Size(136, 35);
-            this.button1.TabIndex = 0;
-            this.button1.Text = "Add Random Event";
-            this.button1.UseVisualStyleBackColor = true;
-            this.button1.Click += new System.EventHandler(this.button1_Click);
+            this.bAddEvent.Location = new System.Drawing.Point(12, 12);
+            this.bAddEvent.Name = "bAddEvent";
+            this.bAddEvent.Size = new System.Drawing.Size(136, 35);
+            this.bAddEvent.TabIndex = 0;
+            this.bAddEvent.Text = "Add Random Event";
+            this.bAddEvent.UseVisualStyleBackColor = true;
+            this.bAddEvent.Click += new System.EventHandler(this.bAddEvent_Click);
             // 
             // cn
             // 
             this.cn.BackColor = System.Drawing.Color.White;
             this.cn.LinesColor = System.Drawing.Color.Black;
             this.cn.LinesThickColor = System.Drawing.Color.Black;
-            this.cn.LinesThickFactor = 2F;
-            this.cn.LinesThickness = 1F;
+            this.cn.LinesThickFactor = 1.75F;
             this.cn.Location = new System.Drawing.Point(12, 53);
             this.cn.Name = "cn";
             this.cn.Offset = 10;
             this.cn.Period = 500;
             this.cn.RingsColor = System.Drawing.Color.Black;
-            this.cn.RingsCount = 8;
-            this.cn.RingsGap = 25;
-            this.cn.RingsGapAuto = true;
             this.cn.RingsMinInnerDiamter = 100;
-            this.cn.RingsThickness = 1F;
             this.cn.Rotation = 0;
             this.cn.Sectors = 12;
             this.cn.Size = new System.Drawing.Size(460, 460);
             this.cn.TabIndex = 1;
+            // 
+            // bAddSector
+            // 
+            this.bAddSector.Location = new System.Drawing.Point(154, 12);
+            this.bAddSector.Name = "bAddSector";
+            this.bAddSector.Size = new System.Drawing.Size(60, 35);
+            this.bAddSector.TabIndex = 2;
+            this.bAddSector.Text = "+ Sector";
+            this.bAddSector.UseVisualStyleBackColor = true;
+            this.bAddSector.Click += new System.EventHandler(this.bAddSector_Click);
+            // 
+            // bRemoveSector
+            // 
+            this.bRemoveSector.Location = new System.Drawing.Point(220, 12);
+            this.bRemoveSector.Name = "bRemoveSector";
+            this.bRemoveSector.Size = new System.Drawing.Size(60, 35);
+            this.bRemoveSector.TabIndex = 2;
+            this.bRemoveSector.Text = "- Sector";
+            this.bRemoveSector.UseVisualStyleBackColor = true;
+            this.bRemoveSector.Click += new System.EventHandler(this.bRemoveSector_Click);
             // 
             // Form1
             // 
@@ -70,19 +87,24 @@
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.BackColor = System.Drawing.SystemColors.ControlDark;
             this.ClientSize = new System.Drawing.Size(484, 531);
+            this.Controls.Add(this.bRemoveSector);
+            this.Controls.Add(this.bAddSector);
             this.Controls.Add(this.cn);
-            this.Controls.Add(this.button1);
-            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedToolWindow;
+            this.Controls.Add(this.bAddEvent);
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.SizableToolWindow;
             this.Name = "Form1";
             this.Text = "Circular Notifier Demo";
+            this.SizeChanged += new System.EventHandler(this.Form1_SizeChanged);
             this.ResumeLayout(false);
 
         }
 
         #endregion
 
-        private System.Windows.Forms.Button button1;
+        private System.Windows.Forms.Button bAddEvent;
         private CircularNotifier cn;
+        private System.Windows.Forms.Button bAddSector;
+        private System.Windows.Forms.Button bRemoveSector;
 
 
 

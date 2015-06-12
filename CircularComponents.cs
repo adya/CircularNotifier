@@ -180,9 +180,12 @@ namespace CircularNotifierControl
         /// <returns>Returns a <see cref="RingSlice"/> object that will represent slice of current ring in specific sector.</returns>
         public RingSlice GetSlice(int sector, Color sliceColor)
         {
-            float sectorAngle = 360 / Sectors;
-            float angle = sector * sectorAngle - 90 + RotationAngle; // -90 because Graphics.DrawArc method measures angles clockwise from the x-axis to the starting point of the arc. 
-            return new RingSlice(Center, OuterRadius, InnerRadius, angle, sectorAngle, RingIndex, sector, sliceColor);
+            float sectorAngle = 360.0f / Sectors;
+            float angle = sector * sectorAngle - 90.0f + RotationAngle; // -90 because Graphics.DrawArc method measures angles clockwise from the x-axis to the starting point of the arc. 
+            float angleMeasErr = (OuterRadius - InnerRadius > 50 ? 30.0f/(OuterRadius - InnerRadius) : 0);
+            ///TODO: Figure out the best way to fix wide slices (they are overlapped with each other).
+            /// As an option.... Wide slices can be splited and drawn as multiple arcs.
+            return new RingSlice(Center, OuterRadius, InnerRadius, angle - angleMeasErr, sectorAngle + 2*angleMeasErr, RingIndex, sector, sliceColor);
         }
 
         public virtual void Render(Graphics g)
@@ -222,11 +225,11 @@ namespace CircularNotifierControl
         /// <summary>
         /// Gets index of sliced ring.
         /// </summary>
-        public int SlicedRing { get; private set; }
+        public int SlicedRingIndex { get; private set; }
         /// <summary>
         /// Gets index of sliced sector.
         /// </summary>
-        public int SlicedSector { get; private set; }
+        public int SlicedSectorIndex { get; private set; }
 
         /// <summary>
         /// Fill color of the slice is the same as <see cref="DrawingPen.Color"/>.
@@ -238,8 +241,8 @@ namespace CircularNotifierControl
         {
             StartAngle = startAngle;
             SweepAngle = endAngle;
-            SlicedRing = slicedRing;
-            SlicedSector = slicedSector;
+            SlicedRingIndex = slicedRing;
+            SlicedSectorIndex = slicedSector;
         }
 
         public override void Render(Graphics g)

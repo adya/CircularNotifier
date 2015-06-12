@@ -35,8 +35,10 @@
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.BackColor = System.Drawing.Color.White;
+            this.DoubleBuffered = true;
             this.Name = "CircularNotifier";
             this.Size = new System.Drawing.Size(500, 500);
+            this.SizeChanged += new System.EventHandler(this.CircularNotifier_SizeChanged);
             this.ResumeLayout(false);
 
         }
