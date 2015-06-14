@@ -91,6 +91,7 @@ namespace CircularNotifierControl
             LinesThickFactor = 2f;
 
             ResizeRedraw = true;
+            Measure();
             InitializeComponent();
 
             PropertyChanged += ValidateProperties_PropertyCahnged;
