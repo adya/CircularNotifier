@@ -663,6 +663,7 @@
             this.Controls.Add(this.panel1);
             this.Controls.Add(this.cn);
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.SizableToolWindow;
+            this.MinimumSize = new System.Drawing.Size(500, 870);
             this.Name = "Form1";
             this.Text = "Circular Notifier Demo";
             this.SizeChanged += new System.EventHandler(this.Form1_SizeChanged);
